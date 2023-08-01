@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract BioSampleTracer {
+    struct Sample {
+        address owner;
+        string donorData;
+        uint256 collectionDate;
+        string storageConditions;
+        string sampleType; // New field to store the type of sample
+        bool isExist;
+    }
+
+    mapping(string => Sample) private samples;
+    mapping(string => OwnershipHistory[]) private sampleHistory;
+    mapping(address => bool) private registeredHospitalsAndResearchers;
+    
+    address private contractOwner;
+    bool private paused;
+    uint256 private samplesCount;
+    
+    struct OwnershipHistory {
+        address owner;
+        uint256 timestamp;
+    }
+    
+    event SampleRegistered(string indexed sampleId, address indexed owner);
+    event SampleTransferred(string indexed sampleId, address indexed previousOwner, address indexed newOwner);
+
+modifier onlyOwner() {
+        require(msg.sender == contractOwner, "You are not the contract owner.");
+        _;
+    }
+
+    modifier onlyRegistered() {
+        require(registeredHospitalsAndResearchers[msg.sender], "You are not a registered hospital or researcher.");
+        _;
+    }
+
+    modifier sampleExists(string memory _sampleId) {
+        require(samples[_sampleId].isExist, "Sample does not exist.");
+        _;
+    }
+
+    constructor() {
+        contractOwner = msg.sender;
+    }
+
+    function registerHospitalOrResearcher() public payable {
+        require(msg.value > 0, "Registration fee must be greater than 0.");
+        registeredHospitalsAndResearchers[msg.sender] = true;
+    }
+
+    function registerSample(
+        string memory _sampleId,
+        string memory _donorData,
+        uint256 _collectionDate,
+        string memory _storageConditions,
+        string memory _sampleType // Added the new parameter for sample type
+    ) public onlyRegistered {
+        require(!samples[_sampleId].isExist, "Sample already exists.");
+
+        Sample storage newSample = samples[_sampleId];
+        newSample.owner = msg.sender;
+        newSample.donorData = _donorData;
+        newSample.collectionDate = _collectionDate;
+        newSample.storageConditions = _storageConditions;
+        newSample.sampleType = _sampleType; // Set the sample type
+        newSample.isExist = true;
+
+        emit SampleRegistered(_sampleId, msg.sender);
+    }
+
+    function transferSample(string memory _sampleId, address _newOwner) public onlyRegistered sampleExists(_sampleId) {
+        Sample storage currentSample = samples[_sampleId];
+        address previousOwner = currentSample.owner;
+
+        currentSample.owner = _newOwner;
+        sampleHistory[_sampleId].push(OwnershipHistory({owner: _newOwner, timestamp: block.timestamp}));
+
+        emit SampleTransferred(_sampleId, previousOwner, _newOwner);
+    }
+
+    function updateSampleMetadata(
+        string memory _sampleId,
+        string memory _donorData,
+        uint256 _collectionDate,
+        string memory _storageConditions
+    ) public onlyRegistered sampleExists(_sampleId) {
+        Sample storage currentSample = samples[_sampleId];
+        currentSample.donorData = _donorData;
+        currentSample.collectionDate = _collectionDate;
+        currentSample.storageConditions = _storageConditions;
+    }
+
+    function getSampleHistory(string memory _sampleId) public view onlyRegistered sampleExists(_sampleId) returns (
+        address[] memory owners,
+        uint256[] memory timestamps
+    ) {
+        OwnershipHistory[] storage history = sampleHistory[_sampleId];
+        owners = new address[](history.length);
+        timestamps = new uint256[](history.length);
+
+        for (uint256 i = 0; i < history.length; i++) {
+            owners[i] = history[i].owner;
+            timestamps[i] = history[i].timestamp;
+        }
+    }
+
+    function getSample(string memory _sampleId) public view onlyRegistered returns (
+        address owner,
+        string memory donorData,
+        uint256 collectionDate,
+        string memory storageConditions
+    ) {
+        require(samples[_sampleId].isExist, "Sample does not exist.");
+
+        Sample storage currentSample = samples[_sampleId];
+        return (
+            currentSample.owner,
+            currentSample.donorData,
+            currentSample.collectionDate,
+            currentSample.storageConditions
+        );
+    }
+}
